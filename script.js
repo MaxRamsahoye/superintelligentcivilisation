@@ -56,6 +56,7 @@
     this.groundY = Math.round(this.H * 0.7);
 
     this.buildStars();
+    this.buildClouds();
     this.buildMountains();
     this.buildCity();
     this.buildTrees();
@@ -77,6 +78,31 @@
       });
     }
     this.stars = stars;
+  };
+
+  Scene.prototype.buildClouds = function () {
+    var rand = seededRandom(17);
+    var clouds = [];
+    for (var i = 0; i < 5; i++) {
+      var puffs = 3 + Math.floor(rand() * 2);
+      var shape = [];
+      for (var p = 0; p < puffs; p++) {
+        shape.push({
+          dx: p * 4 - puffs * 2,
+          dy: -Math.round(rand() * 2),
+          w: 4 + Math.round(rand() * 3),
+          h: 2 + Math.round(rand() * 2)
+        });
+      }
+      clouds.push({
+        y: this.horizon * (0.08 + rand() * 0.28),
+        speed: 1.5 + rand() * 2,
+        offset: rand() * (this.W + 40),
+        depth: 0.5 + rand() * 0.5,
+        shape: shape
+      });
+    }
+    this.clouds = clouds;
   };
 
   Scene.prototype.buildMountains = function () {
@@ -205,18 +231,36 @@
     ctx.globalAlpha = 1;
   };
 
-  Scene.prototype.drawSun = function (t) {
+  Scene.prototype.drawMoon = function (t) {
     var cx = this.W * 0.5;
     var cy = this.horizon * 0.62;
-    var r = Math.max(6, this.H * 0.09);
+    var r = Math.max(6, this.H * 0.08);
     var ctx = this.ctx;
     ctx.save();
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 0.95;
     for (var yy = -r; yy <= r; yy++) {
       var span = Math.sqrt(Math.max(0, r * r - yy * yy));
-      px(ctx, cx - span, cy + yy, span * 2, 1, "#ffe3a8");
+      px(ctx, cx - span, cy + yy, span * 2, 1, "#e7ecff");
     }
+    ctx.globalAlpha = 0.35;
+    px(ctx, cx - r * 0.35, cy - r * 0.3, r * 0.35, r * 0.35, "#b9c3ec");
+    px(ctx, cx + r * 0.1, cy + r * 0.25, r * 0.25, r * 0.25, "#b9c3ec");
     ctx.restore();
+  };
+
+  Scene.prototype.drawClouds = function (t) {
+    var ctx = this.ctx;
+    for (var i = 0; i < this.clouds.length; i++) {
+      var cl = this.clouds[i];
+      var span = this.W + 40;
+      var x = ((cl.offset + t * cl.speed) % span) - 20;
+      ctx.globalAlpha = 0.3 + cl.depth * 0.3;
+      for (var p = 0; p < cl.shape.length; p++) {
+        var puff = cl.shape[p];
+        px(ctx, x + puff.dx, cl.y + puff.dy, puff.w, puff.h, "#cbd0f0");
+      }
+    }
+    ctx.globalAlpha = 1;
   };
 
   Scene.prototype.drawMountains = function () {
@@ -358,7 +402,8 @@
   Scene.prototype.draw = function (t) {
     this.drawSky();
     this.drawStars(t);
-    this.drawSun(t);
+    this.drawMoon(t);
+    this.drawClouds(t);
     this.drawMountains();
     this.drawPlane(t);
     this.drawBirds(t);
@@ -377,6 +422,12 @@
   };
 
   Scene.prototype.start = function () {
+    var reduceMotion = window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      this.draw(0);
+      return;
+    }
     requestAnimationFrame(this.tick.bind(this));
   };
 
@@ -407,39 +458,67 @@
 
   function renderPixelText(canvas) {
     var text = (canvas.dataset.text || "").toUpperCase();
-    var gap = 1;
+    var gap = 3; // wide enough that the outline below still leaves a
+                 // see-through sliver of scene between letters
+    var pad = 1; // room for the outline halo so it never clips at the edge
     var letters = text.split("").map(function (ch) {
       return FONT[ch] || FONT[" "];
     });
     var cols = letters.length * GLYPH_W + (letters.length - 1) * gap;
+    var paddedCols = cols + pad * 2;
+    var paddedRows = GLYPH_H + pad * 2;
 
-    canvas.width = cols;
-    canvas.height = GLYPH_H;
+    var on = new Uint8Array(paddedCols * paddedRows);
+    function set(x, y) { on[y * paddedCols + x] = 1; }
+    function get(x, y) {
+      return x >= 0 && x < paddedCols && y >= 0 && y < paddedRows
+        ? on[y * paddedCols + x]
+        : 0;
+    }
 
-    var ctx = canvas.getContext("2d");
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, cols, GLYPH_H);
-    ctx.fillStyle = "#82f4ff";
-
-    var xOffset = 0;
+    var xOffset = pad;
     letters.forEach(function (glyph) {
       for (var r = 0; r < GLYPH_H; r++) {
         var row = glyph[r];
         for (var c = 0; c < GLYPH_W; c++) {
-          if (row[c] === "1") {
-            ctx.fillRect(xOffset + c, r, 1, 1);
-          }
+          if (row[c] === "1") set(xOffset + c, r + pad);
         }
       }
       xOffset += GLYPH_W + gap;
     });
 
+    canvas.width = paddedCols;
+    canvas.height = paddedRows;
+    var ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, paddedCols, paddedRows);
+
+    // Outline pass: any empty cell orthogonally touching a letter cell gets
+    // a dark halo pixel, then the bright fill goes on top of the letter
+    // cells. Kept as two separate passes (rather than a single dilated
+    // blob) so the sliver of gap between letters stays transparent and the
+    // scene shows through.
+    ctx.fillStyle = "#081019";
+    for (var y = 0; y < paddedRows; y++) {
+      for (var x = 0; x < paddedCols; x++) {
+        if (!get(x, y) && (get(x - 1, y) || get(x + 1, y) || get(x, y - 1) || get(x, y + 1))) {
+          ctx.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+    ctx.fillStyle = "#82f4ff";
+    for (var y2 = 0; y2 < paddedRows; y2++) {
+      for (var x2 = 0; x2 < paddedCols; x2++) {
+        if (get(x2, y2)) ctx.fillRect(x2, y2, 1, 1);
+      }
+    }
+
     // Width comes from the shared cell size (so both words use identical
     // block size); height is derived from aspect-ratio so a max-width
     // clamp on narrow screens can never distort the glyphs.
-    canvas.style.width = "calc(var(--pixel-cell) * " + cols + ")";
+    canvas.style.width = "calc(var(--pixel-cell) * " + paddedCols + ")";
     canvas.style.height = "auto";
-    canvas.style.aspectRatio = cols + " / " + GLYPH_H;
+    canvas.style.aspectRatio = paddedCols + " / " + paddedRows;
   }
 
   function renderAllPixelText() {
