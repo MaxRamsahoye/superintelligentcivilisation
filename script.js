@@ -55,7 +55,6 @@
     this.roadY = Math.round(this.H * 0.88);
     this.groundY = Math.round(this.H * 0.7);
 
-    this.buildStars();
     this.buildClouds();
     this.buildMountains();
     this.buildCity();
@@ -63,21 +62,6 @@
     this.buildTurbines();
     this.buildCars();
     this.buildBirds();
-  };
-
-  Scene.prototype.buildStars = function () {
-    var rand = seededRandom(7);
-    var stars = [];
-    var count = Math.round(this.W * 0.5);
-    for (var i = 0; i < count; i++) {
-      stars.push({
-        x: rand() * this.W,
-        y: rand() * this.horizon * 0.85,
-        phase: rand() * Math.PI * 2,
-        speed: 1 + rand() * 2
-      });
-    }
-    this.stars = stars;
   };
 
   Scene.prototype.buildClouds = function () {
@@ -211,40 +195,25 @@
 
   Scene.prototype.drawSky = function () {
     var ctx = this.ctx;
-    var g = ctx.createLinearGradient(0, 0, 0, this.horizon);
-    g.addColorStop(0, "#140933");
-    g.addColorStop(0.45, "#3a1466");
-    g.addColorStop(0.75, "#a6337a");
-    g.addColorStop(1, "#ff9a56");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, this.W, this.horizon);
+    px(ctx, 0, 0, this.W, this.horizon, "#ffffff");
   };
 
-  Scene.prototype.drawStars = function (t) {
-    var ctx = this.ctx;
-    for (var i = 0; i < this.stars.length; i++) {
-      var s = this.stars[i];
-      var a = 0.4 + 0.6 * Math.abs(Math.sin(t * 0.5 * s.speed + s.phase));
-      ctx.globalAlpha = a;
-      px(ctx, s.x, s.y, 1, 1, "#f4f7ff");
-    }
-    ctx.globalAlpha = 1;
-  };
-
-  Scene.prototype.drawMoon = function (t) {
+  Scene.prototype.drawSun = function (t) {
     var cx = this.W * 0.5;
     var cy = this.horizon * 0.62;
     var r = Math.max(6, this.H * 0.08);
     var ctx = this.ctx;
     ctx.save();
-    ctx.globalAlpha = 0.95;
-    for (var yy = -r; yy <= r; yy++) {
-      var span = Math.sqrt(Math.max(0, r * r - yy * yy));
-      px(ctx, cx - span, cy + yy, span * 2, 1, "#e7ecff");
-    }
     ctx.globalAlpha = 0.35;
-    px(ctx, cx - r * 0.35, cy - r * 0.3, r * 0.35, r * 0.35, "#b9c3ec");
-    px(ctx, cx + r * 0.1, cy + r * 0.25, r * 0.25, r * 0.25, "#b9c3ec");
+    for (var yy = -r * 1.6; yy <= r * 1.6; yy++) {
+      var haloSpan = Math.sqrt(Math.max(0, (r * 1.6) * (r * 1.6) - yy * yy));
+      px(ctx, cx - haloSpan, cy + yy, haloSpan * 2, 1, "#ffe4a3");
+    }
+    ctx.globalAlpha = 0.95;
+    for (var y = -r; y <= r; y++) {
+      var span = Math.sqrt(Math.max(0, r * r - y * y));
+      px(ctx, cx - span, cy + y, span * 2, 1, "#ffb238");
+    }
     ctx.restore();
   };
 
@@ -254,10 +223,10 @@
       var cl = this.clouds[i];
       var span = this.W + 40;
       var x = ((cl.offset + t * cl.speed) % span) - 20;
-      ctx.globalAlpha = 0.3 + cl.depth * 0.3;
+      ctx.globalAlpha = 0.55 + cl.depth * 0.3;
       for (var p = 0; p < cl.shape.length; p++) {
         var puff = cl.shape[p];
-        px(ctx, x + puff.dx, cl.y + puff.dy, puff.w, puff.h, "#cbd0f0");
+        px(ctx, x + puff.dx, cl.y + puff.dy, puff.w, puff.h, "#b7bdd1");
       }
     }
     ctx.globalAlpha = 1;
@@ -265,7 +234,7 @@
 
   Scene.prototype.drawMountains = function () {
     var ctx = this.ctx;
-    ctx.fillStyle = "#241041";
+    ctx.fillStyle = "#9aa2b8";
     ctx.beginPath();
     ctx.moveTo(0, this.horizon);
     for (var i = 0; i < this.mountains.length; i++) {
@@ -282,25 +251,25 @@
     for (var i = 0; i < this.buildings.length; i++) {
       var b = this.buildings[i];
       var top = this.horizon - b.h;
-      px(ctx, b.x, top, b.w, b.h, b.isFactory ? "#1c1330" : "#191233");
+      px(ctx, b.x, top, b.w, b.h, b.isFactory ? "#3a3f52" : "#454b61");
 
       for (var w = 0; w < b.windows.length; w++) {
         var win = b.windows[w];
         var lit = Math.sin(t * win.speed + win.phase) > -0.2;
-        px(ctx, b.x + win.c * 2, top + 1 + win.r * 3, 1, 1, lit ? "#ffd98a" : "#2a2140");
+        px(ctx, b.x + win.c * 2, top + 1 + win.r * 3, 1, 1, lit ? "#ffcf6b" : "#282c3c");
       }
 
       if (b.isFactory) {
         var chimneyX = b.x + b.w - 1;
         var chimneyTop = top - 4;
-        px(ctx, chimneyX, chimneyTop, 2, 4, "#140b26");
+        px(ctx, chimneyX, chimneyTop, 2, 4, "#2c2f3d");
         for (var p = 0; p < 4; p++) {
           var life = ((t * 6 + b.smokeSeed + p * 25) % 100) / 100;
           var sx = chimneyX + Math.sin(t * 0.8 + p + b.smokeSeed) * (2 + life * 4);
           var sy = chimneyTop - life * 16;
           var size = 1 + life * 2.5;
-          ctx.globalAlpha = 0.5 * (1 - life);
-          px(ctx, sx, sy, size, size, "#cfd3e6");
+          ctx.globalAlpha = 0.45 * (1 - life);
+          px(ctx, sx, sy, size, size, "#9aa0b8");
         }
         ctx.globalAlpha = 1;
       }
@@ -312,29 +281,29 @@
     for (var i = 0; i < this.turbines.length; i++) {
       var tb = this.turbines[i];
       var hubY = tb.baseY - tb.towerH;
-      px(ctx, tb.x, hubY, 1, tb.towerH, "#2a2140");
+      px(ctx, tb.x, hubY, 1, tb.towerH, "#6b7280");
       var angle = tb.angle + t * tb.speed;
       for (var blade = 0; blade < 3; blade++) {
         var a = angle + (blade * Math.PI * 2) / 3;
         var len = 5;
         var bx = tb.x + Math.cos(a) * len;
         var by = hubY + Math.sin(a) * len;
-        ctx.strokeStyle = "#e8eaf5";
+        ctx.strokeStyle = "#6b7280";
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(tb.x, hubY);
         ctx.lineTo(bx, by);
         ctx.stroke();
       }
-      px(ctx, tb.x - 0.5, hubY - 0.5, 1, 1, "#e8eaf5");
+      px(ctx, tb.x - 0.5, hubY - 0.5, 1, 1, "#454b5c");
     }
   };
 
   Scene.prototype.drawGround = function () {
     var ctx = this.ctx;
-    px(ctx, 0, this.horizon, this.W, this.H - this.horizon, "#0f2e22");
-    px(ctx, 0, this.groundY, this.W, this.roadY - this.groundY, "#123a2b");
-    px(ctx, 0, this.roadY, this.W, this.H - this.roadY, "#232336");
+    px(ctx, 0, this.horizon, this.W, this.H - this.horizon, "#3fa86a");
+    px(ctx, 0, this.groundY, this.W, this.roadY - this.groundY, "#1f6b3f");
+    px(ctx, 0, this.roadY, this.W, this.H - this.roadY, "#33363f");
 
     var dashW = 3, gap = 3;
     for (var x = -((performance.now() / 60) % (dashW + gap)); x < this.W; x += dashW + gap) {
@@ -375,9 +344,9 @@
     var x = -10 + phase * (this.W + 20) / 10;
     var y = this.H * 0.14 + Math.sin(t * 0.3) * 2;
     var ctx = this.ctx;
-    px(ctx, x, y, 6, 1, "#d9dcef");
-    px(ctx, x + 2, y - 1, 1, 1, "#d9dcef");
-    px(ctx, x + 2, y + 1, 1, 1, "#d9dcef");
+    px(ctx, x, y, 6, 1, "#4b5163");
+    px(ctx, x + 2, y - 1, 1, 1, "#4b5163");
+    px(ctx, x + 2, y + 1, 1, 1, "#4b5163");
     if (Math.floor(t * 4) % 2 === 0) {
       px(ctx, x + 6, y, 1, 1, "#ff5566");
     }
@@ -401,8 +370,7 @@
 
   Scene.prototype.draw = function (t) {
     this.drawSky();
-    this.drawStars(t);
-    this.drawMoon(t);
+    this.drawSun(t);
     this.drawClouds(t);
     this.drawMountains();
     this.drawPlane(t);
@@ -498,7 +466,7 @@
     // cells. Kept as two separate passes (rather than a single dilated
     // blob) so the sliver of gap between letters stays transparent and the
     // scene shows through.
-    ctx.fillStyle = "#081019";
+    ctx.fillStyle = "#ffffff";
     for (var y = 0; y < paddedRows; y++) {
       for (var x = 0; x < paddedCols; x++) {
         if (!get(x, y) && (get(x - 1, y) || get(x + 1, y) || get(x, y - 1) || get(x, y + 1))) {
@@ -506,7 +474,7 @@
         }
       }
     }
-    ctx.fillStyle = "#82f4ff";
+    ctx.fillStyle = "#0a0a0a";
     for (var y2 = 0; y2 < paddedRows; y2++) {
       for (var x2 = 0; x2 < paddedCols; x2++) {
         if (get(x2, y2)) ctx.fillRect(x2, y2, 1, 1);
