@@ -399,6 +399,288 @@
     requestAnimationFrame(this.tick.bind(this));
   };
 
+  // ---------------------------- Ground scene -------------------------------
+  // A second full-screen canvas beneath the hero: a Terraria-style slice of
+  // land, with dirt/stone reaching all the way to the bottom of the screen,
+  // carrying trees, wind turbines and a small solar farm on the surface.
+
+  var BLOCK = 3; // logical px per underground "block"
+
+  var GroundScene = function (canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.ctx.imageSmoothingEnabled = false;
+    this.W = 0;
+    this.H = 0;
+    this.running = true;
+    this.resize();
+    window.addEventListener("resize", this.resize.bind(this));
+    document.addEventListener("visibilitychange", function () {
+      this.running = document.visibilityState !== "hidden";
+    }.bind(this));
+  };
+
+  GroundScene.prototype.resize = function () {
+    var vw = window.innerWidth || 1;
+    var vh = window.innerHeight || 1;
+    var aspect = vw / vh;
+    var LOGICAL_H = 100;
+    var LOGICAL_W = Math.max(120, Math.round(LOGICAL_H * aspect));
+
+    this.W = LOGICAL_W;
+    this.H = LOGICAL_H;
+    this.canvas.width = LOGICAL_W;
+    this.canvas.height = LOGICAL_H;
+
+    this.grassY = Math.round(this.H * 0.42);
+    this.grassH = Math.max(1, Math.round(this.H * 0.018));
+    this.dirtStart = this.grassY + this.grassH;
+    this.stoneStart = Math.round(this.H * 0.7);
+
+    this.buildUnderground();
+    this.buildTrees();
+    this.buildTurbines();
+    this.buildSolarPanels();
+    this.buildGrassTufts();
+  };
+
+  GroundScene.prototype.buildUnderground = function () {
+    var rand = seededRandom(101);
+    var dirtPalette = ["#8a5a34", "#7a4d2c", "#6f4526"];
+    var stonePalette = ["#8a8f9c", "#7d818e", "#6f7380"];
+    var cols = Math.ceil(this.W / BLOCK) + 1;
+    var rows = Math.ceil((this.H - this.dirtStart) / BLOCK) + 1;
+    var blocks = [];
+    for (var r = 0; r < rows; r++) {
+      var y = this.dirtStart + r * BLOCK;
+      var isStone = y >= this.stoneStart;
+      var palette = isStone ? stonePalette : dirtPalette;
+      for (var c = 0; c < cols; c++) {
+        var ore = isStone && rand() < 0.012;
+        blocks.push({
+          x: c * BLOCK,
+          y: y,
+          color: palette[Math.floor(rand() * palette.length)],
+          ore: ore,
+          orePhase: ore ? rand() * Math.PI * 2 : 0
+        });
+      }
+    }
+    this.blocks = blocks;
+
+    // A handful of small pebbles embedded in the dirt band for texture.
+    var pebbles = [];
+    var pebbleRows = Math.max(1, Math.round((this.stoneStart - this.dirtStart) / BLOCK));
+    for (var i = 0; i < this.W * 0.15; i++) {
+      pebbles.push({
+        x: rand() * this.W,
+        y: this.dirtStart + rand() * (pebbleRows * BLOCK),
+        color: rand() < 0.5 ? "#5c3a1e" : "#9c7248"
+      });
+    }
+    this.pebbles = pebbles;
+  };
+
+  GroundScene.prototype.buildTrees = function () {
+    var rand = seededRandom(113);
+    var trees = [];
+    var x = this.W * 0.03;
+    var maxX = this.W * 0.4;
+    while (x < maxX) {
+      trees.push({
+        x: x,
+        trunkH: 8 + rand() * 6,
+        canopyR: 7 + rand() * 5,
+        phase: rand() * Math.PI * 2
+      });
+      x += 8 + rand() * 10;
+    }
+    this.trees = trees;
+  };
+
+  GroundScene.prototype.buildTurbines = function () {
+    var rand = seededRandom(127);
+    var turbines = [];
+    var positions = [this.W * 0.5, this.W * 0.6, this.W * 0.7];
+    for (var i = 0; i < positions.length; i++) {
+      turbines.push({
+        x: positions[i],
+        towerH: this.grassY * (0.55 + rand() * 0.2),
+        angle: rand() * Math.PI * 2,
+        speed: 1.4 + rand() * 0.5
+      });
+    }
+    this.turbines = turbines;
+  };
+
+  GroundScene.prototype.buildSolarPanels = function () {
+    var rand = seededRandom(139);
+    var panels = [];
+    var startX = this.W * 0.76;
+    var endX = this.W * 0.97;
+    var count = 3;
+    for (var i = 0; i < count; i++) {
+      panels.push({
+        x: startX + ((endX - startX) / (count - 1)) * i,
+        w: this.H * 0.09,
+        h: this.H * 0.035,
+        postH: this.H * 0.045,
+        glintOffset: rand() * 100
+      });
+    }
+    this.solarPanels = panels;
+  };
+
+  GroundScene.prototype.buildGrassTufts = function () {
+    var rand = seededRandom(149);
+    var tufts = [];
+    for (var x = 0; x < this.W; x += 2 + rand() * 2) {
+      if (rand() < 0.4) {
+        tufts.push({ x: x, h: 1 + rand() * 2 });
+      }
+    }
+    this.grassTufts = tufts;
+  };
+
+  GroundScene.prototype.drawSky = function () {
+    px(this.ctx, 0, 0, this.W, this.grassY, "#ffffff");
+  };
+
+  GroundScene.prototype.drawUnderground = function (t) {
+    var ctx = this.ctx;
+    for (var i = 0; i < this.blocks.length; i++) {
+      var b = this.blocks[i];
+      px(ctx, b.x, b.y, BLOCK, BLOCK, b.color);
+    }
+    for (var p = 0; p < this.pebbles.length; p++) {
+      var peb = this.pebbles[p];
+      px(ctx, peb.x, peb.y, 1, 1, peb.color);
+    }
+    for (var o = 0; o < this.blocks.length; o++) {
+      var ob = this.blocks[o];
+      if (!ob.ore) continue;
+      var glow = 0.5 + 0.5 * Math.sin(t * 1.5 + ob.orePhase);
+      ctx.globalAlpha = 0.5 + glow * 0.5;
+      px(ctx, ob.x + 1, ob.y + 1, 1, 1, "#ffd76b");
+      ctx.globalAlpha = 1;
+    }
+  };
+
+  GroundScene.prototype.drawGrass = function () {
+    var ctx = this.ctx;
+    px(ctx, 0, this.grassY, this.W, this.grassH, "#3fa86a");
+    ctx.fillStyle = "#2f8f56";
+    for (var i = 0; i < this.grassTufts.length; i++) {
+      var g = this.grassTufts[i];
+      ctx.fillRect(Math.round(g.x), Math.round(this.grassY - g.h), 1, Math.round(g.h));
+    }
+  };
+
+  GroundScene.prototype.drawTrees = function (t) {
+    var ctx = this.ctx;
+    for (var i = 0; i < this.trees.length; i++) {
+      var tr = this.trees[i];
+      var sway = Math.sin(t * 1.1 + tr.phase) * 1.1;
+      var baseY = this.grassY;
+      px(ctx, tr.x, baseY - tr.trunkH, 1, tr.trunkH, "#3a2317");
+      px(ctx, tr.x - tr.canopyR / 2 + sway, baseY - tr.trunkH - tr.canopyR, tr.canopyR, tr.canopyR, "#1f6b3f");
+      px(ctx, tr.x - tr.canopyR / 2 + sway + 1, baseY - tr.trunkH - tr.canopyR - 1, tr.canopyR - 1, tr.canopyR - 1, "#2f8f56");
+      px(ctx, tr.x - tr.canopyR / 4 + sway + 1, baseY - tr.trunkH - tr.canopyR - 2, tr.canopyR / 2, tr.canopyR / 2, "#4bb374");
+    }
+  };
+
+  GroundScene.prototype.drawTurbines = function (t) {
+    var ctx = this.ctx;
+    for (var i = 0; i < this.turbines.length; i++) {
+      var tb = this.turbines[i];
+      var hubY = this.grassY - tb.towerH;
+      px(ctx, tb.x, hubY, 1, tb.towerH, "#6b7280");
+      var angle = tb.angle + t * tb.speed;
+      for (var blade = 0; blade < 3; blade++) {
+        var a = angle + (blade * Math.PI * 2) / 3;
+        var len = Math.max(6, tb.towerH * 0.4);
+        var bx = tb.x + Math.cos(a) * len;
+        var by = hubY + Math.sin(a) * len;
+        ctx.strokeStyle = "#6b7280";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(tb.x, hubY);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+      }
+      px(ctx, tb.x - 0.5, hubY - 0.5, 1, 1, "#454b5c");
+    }
+  };
+
+  GroundScene.prototype.drawSolarPanels = function (t) {
+    var ctx = this.ctx;
+    for (var i = 0; i < this.solarPanels.length; i++) {
+      var sp = this.solarPanels[i];
+      var pivotX = sp.x;
+      var pivotY = this.grassY - sp.postH;
+
+      px(ctx, pivotX - 0.5, pivotY, 1, sp.postH, "#454b5c");
+
+      ctx.save();
+      ctx.translate(pivotX, pivotY);
+      ctx.rotate(-0.35);
+      ctx.fillStyle = "#1b2340";
+      ctx.fillRect(-sp.w / 2, -sp.h, sp.w, sp.h);
+
+      ctx.strokeStyle = "#33406b";
+      ctx.lineWidth = 0.5;
+      var cells = 3;
+      for (var c = 1; c < cells; c++) {
+        var lx = -sp.w / 2 + (sp.w / cells) * c;
+        ctx.beginPath();
+        ctx.moveTo(lx, -sp.h);
+        ctx.lineTo(lx, 0);
+        ctx.stroke();
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-sp.w / 2, -sp.h, sp.w, sp.h);
+      ctx.clip();
+      var glintX = -sp.w / 2 + ((t * 6 + sp.glintOffset) % (sp.w + 8)) - 4;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+      ctx.save();
+      ctx.translate(glintX, -sp.h / 2);
+      ctx.rotate(0.6);
+      ctx.fillRect(-1, -sp.h, 2, sp.h * 2);
+      ctx.restore();
+      ctx.restore();
+
+      ctx.restore();
+    }
+  };
+
+  GroundScene.prototype.draw = function (t) {
+    this.drawSky();
+    this.drawUnderground(t);
+    this.drawGrass();
+    this.drawTurbines(t);
+    this.drawSolarPanels(t);
+    this.drawTrees(t);
+  };
+
+  GroundScene.prototype.tick = function (nowMs) {
+    if (this.running) {
+      this.draw(nowMs / 1000);
+    }
+    requestAnimationFrame(this.tick.bind(this));
+  };
+
+  GroundScene.prototype.start = function () {
+    var reduceMotion = window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      this.draw(0);
+      return;
+    }
+    requestAnimationFrame(this.tick.bind(this));
+  };
+
   // ----------------------------- Pixel text -------------------------------
   // A tiny self-contained 5x7 dot-matrix font, drawn as literal on/off
   // pixels (no web font / network dependency) so it always renders as true
@@ -499,6 +781,11 @@
     if (canvas) {
       var scene = new Scene(canvas);
       scene.start();
+    }
+    var groundCanvas = document.getElementById("ground-scene");
+    if (groundCanvas) {
+      var groundScene = new GroundScene(groundCanvas);
+      groundScene.start();
     }
     renderAllPixelText();
   }
